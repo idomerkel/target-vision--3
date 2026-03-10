@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Target - Synced Master</title>
+    <title>Smart Target - Rotating Wheel & Auto-Play Sync</title>
     
     <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
@@ -16,30 +16,32 @@
         video, canvas.overlay { position: absolute; width: 100%; height: 100%; top: 0; left: 0; object-fit: fill; }
         canvas.overlay { pointer-events: none; z-index: 10; }
         
-        /* MASSIVE SCRUB WHEEL UI */
+        /* ROTATING WHEEL & PLAYBACK UI */
+        .playback-controls { width: 100%; display: flex; flex-direction: column; align-items: center; margin-top: 15px; display: none; }
         .wheel-container { 
-            width: 85vw; max-width: 350px; aspect-ratio: 1 / 1; 
-            border-radius: 50%; 
-            background: radial-gradient(circle, #2a2a2a 39%, #1a1a1a 40%, #1a1a1a 95%, #444 96%); 
-            position: relative; margin: 20px auto; cursor: grab; 
-            border: 3px solid #555; box-shadow: 0 4px 15px rgba(0,0,0,0.8); 
-            display: none; touch-action: none;
+            width: 200px; height: 200px; border-radius: 50%; 
+            background: conic-gradient(from 0deg, #1a1a1a, #333, #1a1a1a);
+            position: relative; cursor: grab; 
+            border: 4px solid #555; box-shadow: 0 4px 15px rgba(0,0,0,0.8); 
+            touch-action: none; display: flex; justify-content: center; align-items: center;
         }
-        .wheel-spinner { width: 100%; height: 100%; position: absolute; border-radius: 50%; pointer-events: none; }
-        .wheel-indicator { position: absolute; top: 0; left: 50%; width: 6px; height: 25px; background: #00aaff; transform: translateX(-50%); border-radius: 3px; }
-        .wheel-center { 
-            position: absolute; top: 50%; left: 50%; width: 40%; height: 40%; 
-            transform: translate(-50%, -50%); border-radius: 50%; background: #333; border: 2px solid #666; 
-            pointer-events: none; display: flex; justify-content: center; align-items: center; 
+        .wheel-spinner { 
+            width: 100%; height: 100%; position: absolute; border-radius: 50%; pointer-events: none; 
+            background: repeating-conic-gradient(from 0deg, transparent 0deg 10deg, rgba(255,255,255,0.05) 10deg 20deg);
         }
-        .wheel-label-rough { font-size: 14px; font-weight: bold; color: #fff; opacity: 0.5; }
-        .wheel-label-fine { position: absolute; top: 30px; width: 100%; text-align: center; font-size: 14px; font-weight: bold; color: #888; pointer-events: none; }
-        .playback-info { font-family: monospace; font-size: 22px; font-weight: bold; color: #00aaff; text-align: center; margin-top: 10px; display: none;}
+        .wheel-indicator { position: absolute; top: 0; left: 50%; width: 8px; height: 20px; background: #00aaff; transform: translateX(-50%); border-radius: 4px; box-shadow: 0 0 8px #00aaff;}
+        .wheel-center-btn { 
+            position: absolute; width: 70px; height: 70px; border-radius: 50%; 
+            background: #007bff; border: 3px solid #0056b3; color: white; 
+            font-size: 24px; font-weight: bold; cursor: pointer; z-index: 10; 
+            display: flex; justify-content: center; align-items: center; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+        .playback-info { font-family: monospace; font-size: 18px; font-weight: bold; color: #00aaff; margin-top: 10px; }
 
-        button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; border-radius: 6px; font-weight: bold; margin: 5px; transition: background 0.3s; }
+        button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; border-radius: 6px; font-weight: bold; margin: 5px; }
         button:disabled { background: #444; cursor: not-allowed; }
         #btnRecord.recording { background: #ff3b30; animation: pulse 1.5s infinite; }
-        #status { font-weight: bold; font-size: 14px; color: #00ff00; margin-bottom: 5px; text-align: center; text-transform: uppercase; }
+        #status { font-weight: bold; font-size: 14px; color: #00ff00; margin-bottom: 5px; text-transform: uppercase; }
         
         .dashboard { display: flex; width: 400px; flex-direction: column; background: #161616; padding: 15px; overflow-y: auto; border-left: 2px solid #333; }
         .model-container { width: 100%; height: 220px; background: #000; border: 1px solid #444; border-radius: 6px; margin-bottom: 10px; position: relative; flex-shrink: 0; }
@@ -48,12 +50,9 @@
         .graph-label { position: absolute; top: 5px; left: 5px; font-size: 10px; color: #888; z-index: 20; background: rgba(0,0,0,0.6); padding: 4px; border-radius: 4px;}
         .split-view { display: flex; gap: 10px; flex: 1; overflow-y: hidden;}
         .feed-col { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px;}
-        .feed-col h3 { font-size: 11px; color: #aaa; margin: 0 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
         
-        /* Analysis Cards - Hidden by default, controlled by JS Timeline Scrub */
-        .card { background: #222; border-radius: 8px; padding: 10px; border-left: 4px solid #444; margin-bottom: 10px; animation: fadeIn 0.3s ease; }
-        .result-card { display: none; } 
-        .result-card.visible { display: block; }
+        .card { background: #222; border-radius: 8px; padding: 10px; border-left: 4px solid #444; margin-bottom: 10px; display: none; }
+        .result-card.visible { display: block; animation: fadeIn 0.3s ease; }
         .card h4 { margin: 0 0 5px 0; color: #ffcc00; font-size: 13px; text-transform: uppercase; }
         .mistake { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding: 4px 0; font-size: 12px; }
         
@@ -71,14 +70,15 @@
             <canvas id="overlayCanvas" class="overlay" width="640" height="480"></canvas>
         </div>
         
-        <div class="wheel-container" id="scrubWheel">
-            <div class="wheel-spinner" id="wheelSpinner">
-                <div class="wheel-indicator"></div>
+        <div class="playback-controls" id="playbackControls">
+            <div class="wheel-container" id="scrubWheel">
+                <div class="wheel-spinner" id="wheelSpinner">
+                    <div class="wheel-indicator"></div>
+                </div>
+                <div class="wheel-center-btn" id="btnPlayPause">▶</div>
             </div>
-            <div class="wheel-center"><span class="wheel-label-rough">ROUGH</span></div>
-            <div class="wheel-label-fine">FINE SCRUB</div>
+            <div class="playback-info" id="timeLabel">0.00s</div>
         </div>
-        <div class="playback-info" id="timeLabel">0.00s</div>
 
         <div style="margin-top: 15px; display: flex; flex-wrap: wrap; justify-content: center;">
             <button id="btnCam" onclick="startCamera()">1. Start Camera</button>
@@ -103,15 +103,16 @@
         <div class="graph-container">
             <span class="graph-label">Gyro Telemetry (Pitch/Roll/Yaw)</span>
             <canvas id="gyroGraph" width="370" height="100" style="position: absolute; top:0; left:0;"></canvas>
+            <div id="graphPlayhead" style="position:absolute; top:0; left:0; width:2px; height:100px; background:#fff; display:none; box-shadow: 0 0 5px #fff;"></div>
         </div>
         
         <div class="split-view">
             <div class="feed-col">
-                <h3>VISUAL TRACKING</h3>
+                <h3 style="color:#aaa; font-size:11px; margin:0 0 10px 0; border-bottom:1px solid #333;">VISUAL TRACKING</h3>
                 <div id="shotList"></div>
             </div>
             <div class="feed-col">
-                <h3>KINEMATICS</h3>
+                <h3 style="color:#aaa; font-size:11px; margin:0 0 10px 0; border-bottom:1px solid #333;">KINEMATICS</h3>
                 <div id="kinematicList"></div>
             </div>
         </div>
@@ -121,12 +122,10 @@
 
 <script>
     // ==========================================
-    // GLOBAL ARCHITECTURE (131 BASE)
+    // GLOBAL ARCHITECTURE
     // ==========================================
     let isRecording = false, isAnalyzing = false;
     let stream, mediaRecorder, recordedChunks = [], sensorLog = [], recordingStartTime = 0;
-    
-    // Absolute Tilt Tracking for 3D Sync
     let currentTilt = { pitch: 0, roll: 0, yaw: 0 };
 
     let orb = null, matcher = null, refKP = null, refDesc = null, refGray = null;
@@ -145,12 +144,23 @@
         { name: "Inconsistent finger placement", patterns: ["Left", "Yaw", "Right"] },
         { name: "Poor grip/stance", patterns: ["Left", "Right", "Roll"] },
         { name: "Not following through", patterns: ["Down", "Pitch"] },
-        { name: "Canting firearm", patterns: ["Roll"] },
-        { name: "Fatigue/shaking", patterns: ["Up", "Down", "Left", "Right"] }
+        { name: "Canting firearm", patterns: ["Roll"] }
     ];
 
-    function onOpenCvReady() {
-        document.getElementById('status').innerText = "System Ready.";
+    function onOpenCvReady() { document.getElementById('status').innerText = "System Ready."; }
+
+    // ==========================================
+    // 3D MODEL FIX: PREVENT LOOPING
+    // ==========================================
+    const viewer = document.getElementById('weaponViewer');
+    if (viewer) {
+        // Force settings
+        viewer.autoplay = false;
+        viewer.loop = false;
+        
+        // Listen for internal loop/finish event and force pause
+        viewer.addEventListener('loop', () => { viewer.pause(); });
+        viewer.addEventListener('finished', () => { viewer.pause(); });
     }
 
     // ==========================================
@@ -165,44 +175,31 @@
                 document.getElementById('btnCam').style.display = 'none';
                 document.getElementById('status').innerText = "Camera Active. Lock target.";
                 
-                // Monitor absolute orientation for 3D mapping
                 window.addEventListener('deviceorientation', (e) => {
-                    currentTilt.pitch = e.beta || 0;
-                    currentTilt.roll = e.gamma || 0;
-                    currentTilt.yaw = e.alpha || 0;
+                    currentTilt.pitch = e.beta || 0; currentTilt.roll = e.gamma || 0; currentTilt.yaw = e.alpha || 0;
                 });
-
-                if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-                    DeviceMotionEvent.requestPermission().then(state => {
-                        if (state === 'granted') window.addEventListener('devicemotion', handleMotion);
-                    }).catch(console.error);
-                } else {
-                    window.addEventListener('devicemotion', handleMotion); 
-                }
+                window.addEventListener('devicemotion', handleMotion); 
             }).catch(e => { console.error(e); });
     }
 
     function handleMotion(event) {
-        let ax = event.accelerationIncludingGravity?.x || event.acceleration?.x || 0;
-        let ay = event.accelerationIncludingGravity?.y || event.acceleration?.y || 0;
-        let az = event.accelerationIncludingGravity?.z || event.acceleration?.z || 0;
+        let ax = event.accelerationIncludingGravity?.x || 0;
+        let ay = event.accelerationIncludingGravity?.y || 0;
+        let az = event.accelerationIncludingGravity?.z || 0;
         let gx = event.rotationRate?.alpha || 0; 
         let gy = event.rotationRate?.beta || 0;  
         let gz = event.rotationRate?.gamma || 0; 
 
-        // Live 3D Orientation tracking
-        const viewer = document.getElementById('weaponViewer');
         if (viewer && !isAnalyzing) {
             viewer.orientation = `${currentTilt.pitch}deg ${currentTilt.yaw}deg ${currentTilt.roll}deg`;
         }
 
-        // Live 3D Pre-Roll Trigger based on Telemetry Spike
         if (isRecording && (Math.abs(gx) > GYRO_SHOT_THRESHOLD || Math.abs(gy) > GYRO_SHOT_THRESHOLD)) {
             let now = performance.now();
             if (viewer && (!viewer.lastSpike || now - viewer.lastSpike > 500)) {
                 viewer.lastSpike = now;
                 viewer.currentTime = 0; // Starts 10% before recoil
-                viewer.play(); // Triggers play exactly once
+                viewer.play(); 
             }
         }
 
@@ -216,15 +213,20 @@
     }
 
     // ==========================================
-    // MASSIVE SCRUB WHEEL LOGIC (Fine vs Rough)
+    // SCRUB WHEEL & REPEAT AUTO-PLAY LOGIC
     // ==========================================
     const wheel = document.getElementById('scrubWheel');
     const spinner = document.getElementById('wheelSpinner');
-    let isDraggingWheel = false, lastAngle = 0, currentFrameIdx = 0, visualAngle = 0;
+    const playBtn = document.getElementById('btnPlayPause');
+    
+    let isDraggingWheel = false, lastAngle = 0, visualAngle = 0;
+    let playbackProgress = 0; // 0.0 to 1.0
+    let isAutoPlaying = false;
+    let playInterval;
 
     wheel.addEventListener('pointerdown', (e) => {
-        if (!isAnalyzing || sensorLog.length === 0) return;
-        isDraggingWheel = true;
+        if (!isAnalyzing || sensorLog.length === 0 || e.target === playBtn) return;
+        isDraggingWheel = true; pausePlayback();
         wheel.setPointerCapture(e.pointerId);
         let rect = wheel.getBoundingClientRect();
         lastAngle = Math.atan2(e.clientY - (rect.top + rect.height/2), e.clientX - (rect.left + rect.width/2));
@@ -233,12 +235,7 @@
     wheel.addEventListener('pointermove', (e) => {
         if (!isDraggingWheel) return;
         let rect = wheel.getBoundingClientRect();
-        let dx = e.clientX - (rect.left + rect.width/2);
-        let dy = e.clientY - (rect.top + rect.height/2);
-        let angle = Math.atan2(dy, dx);
-        
-        let radius = Math.hypot(dx, dy);
-        let maxRadius = rect.width / 2;
+        let angle = Math.atan2(e.clientY - (rect.top + rect.height/2), e.clientX - (rect.left + rect.width/2));
 
         let delta = angle - lastAngle;
         if (delta > Math.PI) delta -= 2 * Math.PI;
@@ -246,52 +243,102 @@
         lastAngle = angle;
 
         visualAngle += delta * (180 / Math.PI);
-        spinner.style.transform = `rotate(${visualAngle}deg)`;
-
-        // Rough scrub if inside the center 40%, otherwise Fine scrub
-        let isRough = radius < (maxRadius * 0.40);
-        let sensitivity = isRough ? 25 : 2; 
         
-        currentFrameIdx += delta * sensitivity; 
-        if (currentFrameIdx < 0) currentFrameIdx = 0;
-        if (currentFrameIdx >= sensorLog.length - 1) currentFrameIdx = sensorLog.length - 1;
+        // 720 degrees (2 full rotations) = 100% of the video length for precise scrubbing
+        playbackProgress += delta / (Math.PI * 4); 
+        if (playbackProgress < 0) playbackProgress = 0;
+        if (playbackProgress > 1) playbackProgress = 1;
 
-        updatePlaybackToFrame(Math.floor(currentFrameIdx));
+        applyPlaybackProgress();
     });
 
     wheel.addEventListener('pointerup', () => isDraggingWheel = false);
     wheel.addEventListener('pointercancel', () => isDraggingWheel = false);
 
-    function updatePlaybackToFrame(idx) {
+    // Auto-Play Button logic
+    playBtn.onclick = function() {
+        if (isAutoPlaying) { pausePlayback(); } 
+        else { startPlayback(); }
+    };
+
+    function startPlayback() {
+        isAutoPlaying = true;
+        playBtn.innerText = "⏸";
+        if (playbackProgress >= 1) playbackProgress = 0; // Restart if at end
+        
+        let videoElement = document.getElementById('webcam');
+        if (videoElement.duration) videoElement.play();
+
+        playInterval = setInterval(() => {
+            if (videoElement.duration) {
+                playbackProgress = videoElement.currentTime / videoElement.duration;
+            } else {
+                playbackProgress += 0.01; // Fallback if video duration is missing
+            }
+            
+            // Auto-rotate the wheel UI to match playback
+            visualAngle = playbackProgress * 720;
+            applyPlaybackProgress(true);
+
+            if (playbackProgress >= 1) pausePlayback();
+        }, 30);
+    }
+
+    function pausePlayback() {
+        isAutoPlaying = false;
+        playBtn.innerText = "▶";
+        clearInterval(playInterval);
+        document.getElementById('webcam').pause();
+    }
+
+    function applyPlaybackProgress(isAuto = false) {
+        if (sensorLog.length === 0) return;
+        
+        spinner.style.transform = `rotate(${visualAngle}deg)`;
+
+        let idx = Math.floor(playbackProgress * (sensorLog.length - 1));
         let s = sensorLog[idx];
         if (!s) return;
         
-        // 1. Sync Video
         let videoElement = document.getElementById('webcam');
-        let progress = idx / (sensorLog.length - 1);
-        if (videoElement.duration) videoElement.currentTime = progress * videoElement.duration;
-        
-        // 2. Sync 3D Orientation (Mapped to recording frame)
-        let viewer = document.getElementById('weaponViewer');
+        if (!isAuto && videoElement.duration) {
+            videoElement.currentTime = playbackProgress * videoElement.duration;
+        }
+
+        // 1. Sync 3D Orientation
         if (viewer) viewer.orientation = `${s.tp}deg ${s.ty}deg ${s.tr}deg`;
 
-        // 3. Scrub Timeline & Results Visibility 
+        // 2. Trigger 3D Animation if we cross a spike during playback
+        if (Math.abs(s.gx) > GYRO_SHOT_THRESHOLD || Math.abs(s.gy) > GYRO_SHOT_THRESHOLD) {
+            let now = performance.now();
+            if (viewer && (!viewer.lastSpike || now - viewer.lastSpike > 500)) {
+                viewer.lastSpike = now;
+                viewer.currentTime = 0; 
+                viewer.play(); 
+            }
+        }
+
+        // 3. Move Graph Playhead
+        let canvas = document.getElementById('gyroGraph');
+        let playhead = document.getElementById('graphPlayhead');
+        if (canvas && playhead) {
+            playhead.style.display = 'block';
+            playhead.style.left = (playbackProgress * canvas.width) + 'px';
+        }
+
+        // 4. Reveal/Hide Results dynamically
         let currentMs = s.time_ms;
         document.querySelectorAll('.result-card').forEach(c => {
             let cardTime = parseFloat(c.getAttribute('data-time'));
-            // If the wheel scrubs PAST the timestamp of the shot/error, it appears!
-            if (cardTime <= currentMs) {
-                c.classList.add('visible'); 
-            } else {
-                c.classList.remove('visible');
-            }
+            if (cardTime <= currentMs) c.classList.add('visible');
+            else c.classList.remove('visible');
         });
 
         document.getElementById('timeLabel').innerText = (currentMs / 1000).toFixed(2) + "s";
     }
 
     // ==========================================
-    // 2. VISION BASELINE (Original 131 Code)
+    // 2. VISION BASELINE (ORIGINAL 131)
     // ==========================================
     function grab() {
         let cvs = document.getElementById('calcCanvas');
@@ -346,8 +393,7 @@
             document.getElementById('shotList').innerHTML = ""; document.getElementById('kinematicList').innerHTML = "";
             document.getElementById('overlayCanvas').getContext('2d').clearRect(0,0,640,480);
             
-            wheel.style.display = 'none';
-            document.getElementById('timeLabel').style.display = 'none';
+            document.getElementById('playbackControls').style.display = 'none';
 
             let options = { mimeType: 'video/webm; codecs=vp8' };
             if (!MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) options = { mimeType: 'video/mp4' }; 
@@ -377,13 +423,12 @@
             isAnalyzing = false;
             document.getElementById('status').innerText = "✅ ANALYSIS COMPLETE";
             
-            // UI SETUP POST-ANALYSIS
-            wheel.style.display = 'block';
-            document.getElementById('timeLabel').style.display = 'block';
+            // SHOW PLAYBACK CONTROLS
+            document.getElementById('playbackControls').style.display = 'flex';
             
-            // Initialize scrub wheel at the END of the timeline so ALL results show up instantly
-            currentFrameIdx = sensorLog.length - 1;
-            updatePlaybackToFrame(currentFrameIdx);
+            playbackProgress = 1.0; 
+            visualAngle = 720;
+            applyPlaybackProgress();
             
             let btn = document.getElementById('btnRecord');
             btn.style.display = 'block'; btn.style.background = "#007bff";
@@ -394,7 +439,7 @@
     }
 
     // ==========================================
-    // 4. THE PHYSICS & VISION MATH (Original 131 Code)
+    // 4. PHYSICS & VISION LOGIC (131)
     // ==========================================
     function drawRecordedGraph() {
         const canvas = document.getElementById('gyroGraph');
@@ -448,9 +493,7 @@
         if (right) moveString += "Right,"; if (pitch) moveString += "Pitch,"; if (yaw) moveString += "Yaw,";
         if (roll) moveString += "Roll,";
 
-        let bestMatch = "Clean Break (Good)"; 
-        let maxScore = 0;
-
+        let bestMatch = "Clean Break (Good)"; let maxScore = 0;
         for (let mistake of mistakeDB) {
             let score = 0;
             for (let pattern of mistake.patterns) { if (moveString.includes(pattern)) score += 10; }
@@ -460,7 +503,6 @@
         let cardColor = bestMatch === "Clean Break (Good)" ? "#00ff00" : "#ff3b30";
         let eventTime = dataSlice[dataSlice.length - 1].time_ms;
         
-        // CSS display property tied to the result-card class
         document.getElementById('kinematicList').insertAdjacentHTML('beforeend', `
             <div class="card result-card" data-time="${eventTime}" style="border-left-color: ${cardColor};">
                 <h4 style="margin:0 0 5px 0; font-size:13px; color: ${cardColor};">Event K-${shotId}</h4>
