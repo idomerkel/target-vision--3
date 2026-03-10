@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Target - Massive Scrub Wheel Sync</title>
+    <title>Smart Target - Synced Master</title>
     
     <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
-    <script>
-        var Module = { onRuntimeInitialized: function() { onOpenCvReady(); } };
-    </script>
+    <script>var Module = { onRuntimeInitialized: function() { onOpenCvReady(); } };</script>
     <script async src="https://docs.opencv.org/4.8.0/opencv.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #0a0a0a; color: white; margin: 0; display: flex; height: 100vh; overflow: hidden; touch-action: none; }
@@ -20,25 +18,23 @@
         
         /* MASSIVE SCRUB WHEEL UI */
         .wheel-container { 
-            width: 85vw; max-width: 400px; aspect-ratio: 1 / 1; 
+            width: 85vw; max-width: 350px; aspect-ratio: 1 / 1; 
             border-radius: 50%; 
             background: radial-gradient(circle, #2a2a2a 39%, #1a1a1a 40%, #1a1a1a 95%, #444 96%); 
             position: relative; margin: 20px auto; cursor: grab; 
-            border: 3px solid #555; box-shadow: 0 4px 15px rgba(0,0,0,0.6); 
+            border: 3px solid #555; box-shadow: 0 4px 15px rgba(0,0,0,0.8); 
             display: none; touch-action: none;
         }
         .wheel-spinner { width: 100%; height: 100%; position: absolute; border-radius: 50%; pointer-events: none; }
         .wheel-indicator { position: absolute; top: 0; left: 50%; width: 6px; height: 25px; background: #00aaff; transform: translateX(-50%); border-radius: 3px; }
         .wheel-center { 
-            position: absolute; top: 50%; left: 50%; 
-            width: 40%; height: 40%; 
-            transform: translate(-50%, -50%); 
-            border-radius: 50%; background: #333; border: 2px solid #666; 
+            position: absolute; top: 50%; left: 50%; width: 40%; height: 40%; 
+            transform: translate(-50%, -50%); border-radius: 50%; background: #333; border: 2px solid #666; 
             pointer-events: none; display: flex; justify-content: center; align-items: center; 
         }
         .wheel-label-rough { font-size: 14px; font-weight: bold; color: #fff; opacity: 0.5; }
-        .wheel-label-fine { position: absolute; top: 30px; width: 100%; text-align: center; font-size: 12px; font-weight: bold; color: #888; pointer-events: none; }
-        .playback-info { font-family: monospace; font-size: 20px; font-weight: bold; color: #00aaff; text-align: center; margin-top: 10px; }
+        .wheel-label-fine { position: absolute; top: 30px; width: 100%; text-align: center; font-size: 14px; font-weight: bold; color: #888; pointer-events: none; }
+        .playback-info { font-family: monospace; font-size: 22px; font-weight: bold; color: #00aaff; text-align: center; margin-top: 10px; display: none;}
 
         button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; border-radius: 6px; font-weight: bold; margin: 5px; transition: background 0.3s; }
         button:disabled { background: #444; cursor: not-allowed; }
@@ -54,7 +50,7 @@
         .feed-col { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px;}
         .feed-col h3 { font-size: 11px; color: #aaa; margin: 0 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
         
-        /* Analysis Cards Hidden By Default, Revealed dynamically via class */
+        /* Analysis Cards - Hidden by default, controlled by JS Timeline Scrub */
         .card { background: #222; border-radius: 8px; padding: 10px; border-left: 4px solid #444; margin-bottom: 10px; animation: fadeIn 0.3s ease; }
         .result-card { display: none; } 
         .result-card.visible { display: block; }
@@ -82,7 +78,7 @@
             <div class="wheel-center"><span class="wheel-label-rough">ROUGH</span></div>
             <div class="wheel-label-fine">FINE SCRUB</div>
         </div>
-        <div class="playback-info" id="timeLabel" style="display:none;">0.00s</div>
+        <div class="playback-info" id="timeLabel">0.00s</div>
 
         <div style="margin-top: 15px; display: flex; flex-wrap: wrap; justify-content: center;">
             <button id="btnCam" onclick="startCamera()">1. Start Camera</button>
@@ -206,7 +202,7 @@
             if (viewer && (!viewer.lastSpike || now - viewer.lastSpike > 500)) {
                 viewer.lastSpike = now;
                 viewer.currentTime = 0; // Starts 10% before recoil
-                viewer.play();
+                viewer.play(); // Triggers play exactly once
             }
         }
 
@@ -241,7 +237,6 @@
         let dy = e.clientY - (rect.top + rect.height/2);
         let angle = Math.atan2(dy, dx);
         
-        // Calculate distance from center to determine Fine vs Rough
         let radius = Math.hypot(dx, dy);
         let maxRadius = rect.width / 2;
 
@@ -271,26 +266,24 @@
         let s = sensorLog[idx];
         if (!s) return;
         
-        // Sync Video
+        // 1. Sync Video
         let videoElement = document.getElementById('webcam');
         let progress = idx / (sensorLog.length - 1);
         if (videoElement.duration) videoElement.currentTime = progress * videoElement.duration;
         
-        // Sync 3D Orientation directly using absolute tilt
+        // 2. Sync 3D Orientation (Mapped to recording frame)
         let viewer = document.getElementById('weaponViewer');
-        if (viewer) {
-            // Apply current frame's recorded rotation to 3D model
-            viewer.orientation = `${s.tp}deg ${s.ty}deg ${s.tr}deg`;
-        }
+        if (viewer) viewer.orientation = `${s.tp}deg ${s.ty}deg ${s.tr}deg`;
 
-        // Reveal Analysis Data Cards accurately bound to Timeline (CSS Fix Applied)
+        // 3. Scrub Timeline & Results Visibility 
         let currentMs = s.time_ms;
         document.querySelectorAll('.result-card').forEach(c => {
             let cardTime = parseFloat(c.getAttribute('data-time'));
+            // If the wheel scrubs PAST the timestamp of the shot/error, it appears!
             if (cardTime <= currentMs) {
-                c.classList.add('visible'); // Let CSS handle display:block
+                c.classList.add('visible'); 
             } else {
-                c.classList.remove('visible'); // Reverts to display:none
+                c.classList.remove('visible');
             }
         });
 
@@ -298,7 +291,7 @@
     }
 
     // ==========================================
-    // 2. VISION BASELINE (TIGHTENED MASK)
+    // 2. VISION BASELINE (Original 131 Code)
     // ==========================================
     function grab() {
         let cvs = document.getElementById('calcCanvas');
@@ -384,11 +377,13 @@
             isAnalyzing = false;
             document.getElementById('status').innerText = "✅ ANALYSIS COMPLETE";
             
-            // SHOW SCRUB WHEEL
+            // UI SETUP POST-ANALYSIS
             wheel.style.display = 'block';
             document.getElementById('timeLabel').style.display = 'block';
-            currentFrameIdx = 0;
-            updatePlaybackToFrame(0);
+            
+            // Initialize scrub wheel at the END of the timeline so ALL results show up instantly
+            currentFrameIdx = sensorLog.length - 1;
+            updatePlaybackToFrame(currentFrameIdx);
             
             let btn = document.getElementById('btnRecord');
             btn.style.display = 'block'; btn.style.background = "#007bff";
@@ -399,7 +394,7 @@
     }
 
     // ==========================================
-    // 4. THE PHYSICS & VISION MATH
+    // 4. THE PHYSICS & VISION MATH (Original 131 Code)
     // ==========================================
     function drawRecordedGraph() {
         const canvas = document.getElementById('gyroGraph');
@@ -426,7 +421,8 @@
             if (s.time_ms - lastSpikeTime > 500) {
                 if (Math.abs(s.gx) > GYRO_SHOT_THRESHOLD || Math.abs(s.gy) > GYRO_SHOT_THRESHOLD || Math.abs(s.ax) > ACCEL_SHOT_THRESHOLD) {
                     lastSpikeTime = s.time_ms; shotCounter++;
-                    diagnoseKinematics(sensorLog.filter(data => data.time_ms >= s.time_ms - 400 && data.time_ms <= s.time_ms), shotCounter);
+                    let preShotSlice = sensorLog.filter(data => data.time_ms >= s.time_ms - 400 && data.time_ms <= s.time_ms);
+                    diagnoseKinematics(preShotSlice, shotCounter);
                 }
             }
         }
@@ -464,7 +460,7 @@
         let cardColor = bestMatch === "Clean Break (Good)" ? "#00ff00" : "#ff3b30";
         let eventTime = dataSlice[dataSlice.length - 1].time_ms;
         
-        // NO INLINE STYLES FOR DISPLAY, RELIES ON CSS .visible
+        // CSS display property tied to the result-card class
         document.getElementById('kinematicList').insertAdjacentHTML('beforeend', `
             <div class="card result-card" data-time="${eventTime}" style="border-left-color: ${cardColor};">
                 <h4 style="margin:0 0 5px 0; font-size:13px; color: ${cardColor};">Event K-${shotId}</h4>
@@ -498,7 +494,7 @@
                             cv.absdiff(refGray, warped, diff); cv.threshold(diff, thresh, 50, 255, cv.THRESH_BINARY);
                             
                             let liveMask = cv.Mat.zeros(refGray.rows, refGray.cols, cv.CV_8UC1);
-                            cv.circle(liveMask, new cv.Point(targetCenter.x, targetCenter.y), targetRadius - 25, new cv.Scalar(255), -1);
+                            cv.circle(liveMask, new cv.Point(targetCenter.x, targetCenter.y), targetRadius - 15, new cv.Scalar(255), -1);
                             let maskedThresh = new cv.Mat(); thresh.copyTo(maskedThresh, liveMask);
 
                             let contours = new cv.MatVector(), hier = new cv.Mat();
@@ -510,7 +506,7 @@
                                 if(area > 15 && area < 600) {
                                     let M = cv.moments(cnt); let p = {x: M.m10/M.m00, y: M.m01/M.m00};
                                     let distFromCenter = Math.hypot(p.x - targetCenter.x, p.y - targetCenter.y);
-                                    if (distFromCenter > targetRadius - 25) continue; 
+                                    if (distFromCenter > targetRadius - 15) continue; 
                                     if(blacklist.some(b => Math.hypot(b.x-p.x, b.y-p.y) < PROXIMITY)) continue;
                                     let hull = new cv.Mat(); cv.convexHull(cnt, hull);
                                     let solidity = area / (cv.contourArea(hull) || 1); hull.delete();
@@ -540,7 +536,6 @@
                     const s = persistentShots[persistentShots.length - 1];
                     let vidTimeMs = document.getElementById('webcam').currentTime * 1000;
                     
-                    // NO INLINE STYLES FOR DISPLAY, RELIES ON CSS .visible
                     document.getElementById('shotList').insertAdjacentHTML('beforeend', `
                         <div class="card result-card" data-time="${vidTimeMs}" style="border-left-color: #00aaff;">
                             <h4 style="margin:0 0 5px 0; font-size:13px; color:#00aaff;">Shot V-${persistentShots.length}: ${s.d.z} Zone</h4>
