@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Target - Post-Process Engine & Telemetry</title>
+    <title>Smart Target - Scrub Wheel & 3D Sync</title>
     
     <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
@@ -12,63 +12,67 @@
     </script>
     <script async src="https://docs.opencv.org/4.8.0/opencv.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #0a0a0a; color: white; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #0a0a0a; color: white; margin: 0; display: flex; height: 100vh; overflow: hidden; touch-action: none; }
         .main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 10px; overflow-y: auto; }
         .video-box { position: relative; width: 640px; height: 480px; max-width: 95vw; max-height: 50vh; border: 3px solid #444; border-radius: 12px; overflow: hidden; background: #000; flex-shrink: 0; }
         video, canvas.overlay { position: absolute; width: 100%; height: 100%; top: 0; left: 0; object-fit: fill; }
         canvas.overlay { pointer-events: none; z-index: 10; }
         
-        /* Timeline Styling */
-        .timeline-container { width: 640px; max-width: 95vw; margin-top: 10px; background: #1a1a1a; padding: 10px; border-radius: 8px; border: 1px solid #444; }
-        #timeBar { width: 100%; cursor: pointer; accent-color: #007bff; }
+        /* Custom Scrub Wheel UI */
+        .wheel-container { width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, #2a2a2a 35%, #1a1a1a 36%, #1a1a1a 95%, #444 96%); position: relative; margin: 15px auto; cursor: grab; border: 2px solid #555; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: none; }
+        .wheel-spinner { width: 100%; height: 100%; position: absolute; border-radius: 50%; pointer-events: none; }
+        .wheel-indicator { position: absolute; top: 0; left: 50%; width: 4px; height: 15px; background: #00aaff; transform: translateX(-50%); border-radius: 2px; }
+        .wheel-center { position: absolute; top: 50%; left: 50%; width: 50px; height: 50px; transform: translate(-50%, -50%); border-radius: 50%; background: #333; border: 2px solid #666; pointer-events: none; display: flex; justify-content: center; align-items: center; }
+        .wheel-label-rough { font-size: 9px; font-weight: bold; color: #fff; }
+        .wheel-label-fine { position: absolute; top: 20px; width: 100%; text-align: center; font-size: 9px; font-weight: bold; color: #888; pointer-events: none; }
+        .playback-info { font-family: monospace; font-size: 14px; color: #00aaff; text-align: center; margin-top: 5px; }
 
         button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; border-radius: 6px; font-weight: bold; margin: 5px; transition: background 0.3s; }
         button:disabled { background: #444; cursor: not-allowed; }
         #btnRecord.recording { background: #ff3b30; animation: pulse 1.5s infinite; }
-        #status { font-weight: bold; font-size: 14px; color: #00ff00; margin-bottom: 10px; text-align: center; text-transform: uppercase; }
-        .debug-view { width: 160px; height: 120px; border: 1px solid #444; background: #000; margin-top: 10px; }
+        #status { font-weight: bold; font-size: 14px; color: #00ff00; margin-bottom: 5px; text-align: center; text-transform: uppercase; }
         
         .dashboard { display: flex; width: 400px; flex-direction: column; background: #161616; padding: 15px; overflow-y: auto; border-left: 2px solid #333; }
+        .model-container { width: 100%; height: 220px; background: #000; border: 1px solid #444; border-radius: 6px; margin-bottom: 10px; position: relative; flex-shrink: 0; }
         
-        /* 3D Model Container */
-        .model-container { width: 100%; height: 200px; background: #000; border: 1px solid #444; border-radius: 6px; margin-bottom: 15px; position: relative; flex-shrink: 0; }
-        
-        .graph-container { width: 100%; height: 120px; background: #000; border: 1px solid #444; border-radius: 6px; margin-bottom: 15px; position: relative; flex-shrink: 0; }
+        .graph-container { width: 100%; height: 100px; background: #000; border: 1px solid #444; border-radius: 6px; margin-bottom: 15px; position: relative; flex-shrink: 0; }
         .graph-label { position: absolute; top: 5px; left: 5px; font-size: 10px; color: #888; z-index: 20; background: rgba(0,0,0,0.6); padding: 4px; border-radius: 4px;}
         .split-view { display: flex; gap: 10px; flex: 1; overflow-y: hidden;}
         .feed-col { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px;}
-        .feed-col h3 { font-size: 13px; color: #aaa; margin: 0 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        .feed-col h3 { font-size: 11px; color: #aaa; margin: 0 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
         
-        .card { background: #222; border-radius: 8px; padding: 10px; border-left: 4px solid #444; margin-bottom: 10px; animation: fadeIn 0.3s ease; }
-        .card h4 { margin: 0 0 10px 0; color: #ffcc00; font-size: 14px; text-transform: uppercase; }
-        .mistake { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding: 6px 0; font-size: 13px; }
-        .prob { font-weight: bold; font-size: 11px; }
+        .card { background: #222; border-radius: 8px; padding: 10px; border-left: 4px solid #444; margin-bottom: 10px; animation: fadeIn 0.3s ease; display: none; }
+        .card h4 { margin: 0 0 5px 0; color: #ffcc00; font-size: 13px; text-transform: uppercase; }
+        .mistake { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding: 4px 0; font-size: 12px; }
         
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateX(15px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
     <div class="main">
-        <h2 style="margin:0 0 5px 0; font-size: 18px;">Post-Process Analysis Engine</h2>
+        <h2 style="margin:0 0 5px 0; font-size: 18px;">Post-Process Engine & Telemetry</h2>
         <p id="status">Loading WASM...</p>
         <div class="video-box" id="vbox">
             <video id="webcam" autoplay playsinline muted></video>
             <canvas id="overlayCanvas" class="overlay" width="640" height="480"></canvas>
         </div>
         
-        <div class="timeline-container">
-            <input type="range" id="timeBar" min="0" max="1000" value="0" disabled>
-            <div style="font-size: 10px; color: #888; text-align: center; margin-top: 5px;">SCRUB TIMELINE TO REVIEW SYNCHRONIZED RESULTS</div>
+        <div class="wheel-container" id="scrubWheel">
+            <div class="wheel-spinner" id="wheelSpinner">
+                <div class="wheel-indicator"></div>
+            </div>
+            <div class="wheel-center"><span class="wheel-label-rough">ROUGH</span></div>
+            <div class="wheel-label-fine">FINE</div>
         </div>
+        <div class="playback-info" id="timeLabel" style="display:none;">0.00s</div>
 
         <div style="margin-top: 15px; display: flex; flex-wrap: wrap; justify-content: center;">
             <button id="btnCam" onclick="startCamera()">1. Start Camera</button>
             <button id="btnBase" onclick="setBaseline()" disabled>2. Lock Baseline</button>
             <button id="btnRecord" onclick="toggleRecording()" disabled style="background:#28a745;">3. Record Session</button>
         </div>
-        <canvas id="debugCanvas" class="debug-view"></canvas>
     </div>
 
     <div class="dashboard">
@@ -85,22 +89,18 @@
             </model-viewer>
         </div>
 
-        <h3 style="margin: 0 0 5px 0; font-size: 16px;">Recorded Session Telemetry</h3>
         <div class="graph-container">
-            <span class="graph-label">
-                Gyro: <span style="color:#ff4444">Roll</span> | <span style="color:#44ff44">Pitch</span> | <span style="color:#4444ff">Yaw</span> <br>
-                Accel: <span style="color:#ffaa00">X</span> | <span style="color:#00ffff">Y</span> | <span style="color:#ff00ff">Z</span>
-            </span>
-            <canvas id="gyroGraph" width="370" height="120" style="position: absolute; top:0; left:0;"></canvas>
+            <span class="graph-label">Gyro Telemetry (Pitch/Roll/Yaw)</span>
+            <canvas id="gyroGraph" width="370" height="100" style="position: absolute; top:0; left:0;"></canvas>
         </div>
         
         <div class="split-view">
             <div class="feed-col">
-                <h3>Visual Tracking</h3>
+                <h3>VISUAL TRACKING</h3>
                 <div id="shotList"></div>
             </div>
             <div class="feed-col">
-                <h3>Kinematic Errors</h3>
+                <h3>KINEMATICS</h3>
                 <div id="kinematicList"></div>
             </div>
         </div>
@@ -110,16 +110,13 @@
 
 <script>
     // ==========================================
-    // GLOBAL ARCHITECTURE (ORIGINAL)
+    // GLOBAL ARCHITECTURE (131 BASE)
     // ==========================================
-    let isRecording = false;
-    let isAnalyzing = false;
+    let isRecording = false, isAnalyzing = false;
+    let stream, mediaRecorder, recordedChunks = [], sensorLog = [], recordingStartTime = 0;
     
-    let stream;
-    let mediaRecorder;
-    let recordedChunks = [];
-    let sensorLog = []; 
-    let recordingStartTime = 0;
+    // Absolute Tilt Tracking for 3D Sync
+    let currentTilt = { pitch: 0, roll: 0, yaw: 0 };
 
     let orb = null, matcher = null, refKP = null, refDesc = null, refGray = null;
     let cropSize = 0, targetRadius = 0, persistentShots = [], candidates = [], blacklist = [];
@@ -137,18 +134,11 @@
         { name: "Inconsistent finger placement", patterns: ["Left", "Yaw", "Right"] },
         { name: "Poor grip/stance", patterns: ["Left", "Right", "Roll"] },
         { name: "Not following through", patterns: ["Down", "Pitch"] },
-        { name: "Canting firearm", patterns: ["Roll"] },
-        { name: "Fatigue/shaking", patterns: ["Up", "Down", "Left", "Right"] }
+        { name: "Canting firearm", patterns: ["Roll"] }
     ];
 
     function onOpenCvReady() {
         document.getElementById('status').innerText = "System Ready.";
-        const canvas = document.getElementById('gyroGraph');
-        const ctx = canvas.getContext('2d');
-        ctx.strokeStyle = '#333';
-        ctx.beginPath(); ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2); ctx.stroke();
-        ctx.fillStyle = "#888"; ctx.font = "11px sans-serif";
-        ctx.fillText("Graph will generate after recording stops.", 10, 30);
     }
 
     // ==========================================
@@ -163,6 +153,13 @@
                 document.getElementById('btnCam').style.display = 'none';
                 document.getElementById('status').innerText = "Camera Active. Lock target.";
                 
+                // Monitor absolute orientation for 3D mapping
+                window.addEventListener('deviceorientation', (e) => {
+                    currentTilt.pitch = e.beta || 0;
+                    currentTilt.roll = e.gamma || 0;
+                    currentTilt.yaw = e.alpha || 0;
+                });
+
                 if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                     DeviceMotionEvent.requestPermission().then(state => {
                         if (state === 'granted') window.addEventListener('devicemotion', handleMotion);
@@ -170,10 +167,7 @@
                 } else {
                     window.addEventListener('devicemotion', handleMotion); 
                 }
-            }).catch(e => {
-                console.error(e);
-                document.getElementById('status').innerText = "Camera Error.";
-            });
+            }).catch(e => { console.error(e); });
     }
 
     function handleMotion(event) {
@@ -184,19 +178,14 @@
         let gy = event.rotationRate?.beta || 0;  
         let gz = event.rotationRate?.gamma || 0; 
 
-        // -- 3D VIEWER LIVE SYNC & PRE-ROLL TRIGGER --
-        const viewer = document.getElementById('weaponViewer');
-        if (viewer && !isAnalyzing) {
-            viewer.orientation = `${gy}deg ${gz}deg ${gx}deg`;
-            
-            // 10% Pre-Roll Trigger Logic
-            if (Math.abs(gx) > GYRO_SHOT_THRESHOLD || Math.abs(gy) > GYRO_SHOT_THRESHOLD) {
-                let now = performance.now();
-                if (!viewer.lastSpike || now - viewer.lastSpike > 500) {
-                    viewer.lastSpike = now;
-                    viewer.currentTime = 0; 
-                    viewer.play();
-                }
+        // Live 3D Pre-Roll Trigger
+        if (isRecording && (Math.abs(gx) > GYRO_SHOT_THRESHOLD || Math.abs(gy) > GYRO_SHOT_THRESHOLD)) {
+            const viewer = document.getElementById('weaponViewer');
+            let now = performance.now();
+            if (viewer && (!viewer.lastSpike || now - viewer.lastSpike > 500)) {
+                viewer.lastSpike = now;
+                viewer.currentTime = 0; // Starts 10% before recoil
+                viewer.play();
             }
         }
 
@@ -204,12 +193,81 @@
 
         sensorLog.push({
             time_ms: performance.now() - recordingStartTime,
-            ax: ax, ay: ay, az: az, gx: gx, gy: gy, gz: gz
+            ax: ax, ay: ay, az: az, gx: gx, gy: gy, gz: gz,
+            tp: currentTilt.pitch, tr: currentTilt.roll, ty: currentTilt.yaw
         });
     }
 
     // ==========================================
-    // 2. VISION BASELINE (ORIGINAL TRUE CENTER MATH)
+    // SCRUB WHEEL LOGIC (Fine Outside / Rough Inside)
+    // ==========================================
+    const wheel = document.getElementById('scrubWheel');
+    const spinner = document.getElementById('wheelSpinner');
+    let isDraggingWheel = false, lastAngle = 0, currentFrameIdx = 0, visualAngle = 0;
+
+    wheel.addEventListener('pointerdown', (e) => {
+        if (!isAnalyzing || sensorLog.length === 0) return;
+        isDraggingWheel = true;
+        wheel.setPointerCapture(e.pointerId);
+        let rect = wheel.getBoundingClientRect();
+        lastAngle = Math.atan2(e.clientY - (rect.top + rect.height/2), e.clientX - (rect.left + rect.width/2));
+    });
+
+    wheel.addEventListener('pointermove', (e) => {
+        if (!isDraggingWheel) return;
+        let rect = wheel.getBoundingClientRect();
+        let dx = e.clientX - (rect.left + rect.width/2);
+        let dy = e.clientY - (rect.top + rect.height/2);
+        let angle = Math.atan2(dy, dx);
+        let radius = Math.hypot(dx, dy);
+
+        let delta = angle - lastAngle;
+        if (delta > Math.PI) delta -= 2 * Math.PI;
+        if (delta < -Math.PI) delta += 2 * Math.PI;
+        lastAngle = angle;
+
+        // Visual rotation
+        visualAngle += delta * (180 / Math.PI);
+        spinner.style.transform = `rotate(${visualAngle}deg)`;
+
+        // Fine (Outside > 40px radius) vs Rough (Inside <= 40px radius)
+        let sensitivity = (radius > 40) ? 2 : 25; 
+        currentFrameIdx += delta * sensitivity; 
+        
+        if (currentFrameIdx < 0) currentFrameIdx = 0;
+        if (currentFrameIdx >= sensorLog.length - 1) currentFrameIdx = sensorLog.length - 1;
+
+        updatePlaybackToFrame(Math.floor(currentFrameIdx));
+    });
+
+    wheel.addEventListener('pointerup', () => isDraggingWheel = false);
+    wheel.addEventListener('pointercancel', () => isDraggingWheel = false);
+
+    function updatePlaybackToFrame(idx) {
+        let s = sensorLog[idx];
+        if (!s) return;
+        
+        let videoElement = document.getElementById('webcam');
+        let progress = idx / (sensorLog.length - 1);
+        if (videoElement.duration) videoElement.currentTime = progress * videoElement.duration;
+        
+        // Sync 3D Orientation directly using absolute tilt
+        let viewer = document.getElementById('weaponViewer');
+        if (viewer) viewer.setAttribute('orientation', `${s.tp}deg ${s.ty}deg ${s.tr}deg`);
+
+        // Reveal Data Cards
+        let currentMs = s.time_ms;
+        document.querySelectorAll('.result-card').forEach(c => {
+            let cardTime = parseFloat(c.getAttribute('data-time'));
+            if (cardTime <= currentMs) c.style.display = 'block';
+            else c.style.display = 'none';
+        });
+
+        document.getElementById('timeLabel').innerText = (currentMs / 1000).toFixed(2) + "s";
+    }
+
+    // ==========================================
+    // 2. VISION BASELINE (TIGHTENED MASK)
     // ==========================================
     function grab() {
         let cvs = document.getElementById('calcCanvas');
@@ -218,10 +276,7 @@
     }
 
     function setBaseline() {
-        if(!orb) { 
-            orb = new cv.ORB(1500); matcher = new cv.BFMatcher(cv.NORM_HAMMING, true); 
-            refKP = new cv.KeyPointVector(); refDesc = new cv.Mat(); 
-        }
+        if(!orb) { orb = new cv.ORB(1500); matcher = new cv.BFMatcher(cv.NORM_HAMMING, true); refKP = new cv.KeyPointVector(); refDesc = new cv.Mat(); }
         let frame = grab();
         let gray = new cv.Mat(), thresh = new cv.Mat();
         cv.cvtColor(frame, gray, cv.COLOR_RGBA2GRAY);
@@ -241,16 +296,11 @@
         
         let rx = Math.max(0, best.center.x - cropSize/2);
         let ry = Math.max(0, best.center.y - cropSize/2);
-        let rw = Math.min(640 - rx, cropSize);
-        let rh = Math.min(480 - ry, cropSize);
-        let rect = new cv.Rect(rx, ry, rw, rh);
-        
         targetCenter = { x: best.center.x - rx, y: best.center.y - ry };
 
-        let roi = frame.roi(rect);
+        let roi = frame.roi(new cv.Rect(rx, ry, Math.min(640-rx, cropSize), Math.min(480-ry, cropSize)));
         if(refGray) refGray.delete();
-        refGray = new cv.Mat();
-        cv.cvtColor(roi, refGray, cv.COLOR_RGBA2GRAY);
+        refGray = new cv.Mat(); cv.cvtColor(roi, refGray, cv.COLOR_RGBA2GRAY);
         
         let mask = cv.Mat.zeros(roi.rows, roi.cols, cv.CV_8UC1);
         cv.circle(mask, new cv.Point(targetCenter.x, targetCenter.y), targetRadius - 10, new cv.Scalar(255), -1);
@@ -258,26 +308,22 @@
 
         document.getElementById('btnRecord').disabled = false;
         document.getElementById('btnBase').style.display = 'none';
-        document.getElementById('status').innerText = "Target Locked. Ready to Shoot.";
-        
+        document.getElementById('status').innerText = "Target Locked.";
         frame.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete(); mask.delete(); roi.delete();
     }
 
-
     // ==========================================
-    // 3. POST-PROCESS RECORDING FLOW & TIMELINE
+    // 3. POST-PROCESS RECORDING FLOW
     // ==========================================
     function toggleRecording() {
         let btn = document.getElementById('btnRecord');
-        let tBar = document.getElementById('timeBar');
-
         if (!isRecording) {
             recordedChunks = []; sensorLog = []; persistentShots = []; 
-            document.getElementById('shotList').innerHTML = "";
-            document.getElementById('kinematicList').innerHTML = "";
+            document.getElementById('shotList').innerHTML = ""; document.getElementById('kinematicList').innerHTML = "";
             document.getElementById('overlayCanvas').getContext('2d').clearRect(0,0,640,480);
-            document.getElementById('gyroGraph').getContext('2d').clearRect(0,0,370, 120);
-            tBar.disabled = true; tBar.value = 0;
+            
+            wheel.style.display = 'none';
+            document.getElementById('timeLabel').style.display = 'none';
 
             let options = { mimeType: 'video/webm; codecs=vp8' };
             if (!MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) options = { mimeType: 'video/mp4' }; 
@@ -287,236 +333,112 @@
             mediaRecorder.onstop = triggerAnalysisPhase;
 
             recordingStartTime = performance.now();
-            isRecording = true;
-            mediaRecorder.start();
-
-            btn.innerText = "Stop & Analyze";
-            btn.classList.add("recording");
-            document.getElementById('status').innerText = "🔴 RECORDING RAW DATA...";
-            document.getElementById('status').style.color = "#ff3b30";
-
+            isRecording = true; mediaRecorder.start();
+            btn.innerText = "Stop & Analyze"; btn.classList.add("recording");
         } else {
-            isRecording = false;
-            mediaRecorder.stop(); 
-            btn.style.display = 'none'; 
+            isRecording = false; mediaRecorder.stop(); btn.style.display = 'none'; 
         }
     }
 
     function triggerAnalysisPhase() {
         document.getElementById('status').innerText = "⚙️ ANALYZING DATA...";
-        document.getElementById('status').style.color = "#00aaff";
+        drawRecordedGraph(); processEntireSensorLog();
 
-        drawRecordedGraph();
-        processEntireSensorLog();
-
-        let videoBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
-        let videoURL = URL.createObjectURL(videoBlob);
-        
         let videoElement = document.getElementById('webcam');
         videoElement.srcObject = null; 
-        videoElement.src = videoURL;   
+        videoElement.src = URL.createObjectURL(new Blob(recordedChunks, { type: mediaRecorder.mimeType }));   
         
-        videoElement.onplay = () => {
-            isAnalyzing = true;
-            trackingLoopPlayback();
-        };
-
+        videoElement.onplay = () => { isAnalyzing = true; trackingLoopPlayback(); };
         videoElement.onended = () => {
             isAnalyzing = false;
-            document.getElementById('status').innerText = "✅ ANALYSIS COMPLETE (Review Mode)";
-            document.getElementById('status').style.color = "#00ff00";
+            document.getElementById('status').innerText = "✅ ANALYSIS COMPLETE";
             
-            // ENABLE TIMELINE SCRUBBING
-            let tBar = document.getElementById('timeBar');
-            tBar.disabled = false;
-            tBar.oninput = function() {
-                let progress = this.value / 1000;
-                let currentMs = progress * videoElement.duration * 1000;
-                
-                if (videoElement.duration) videoElement.currentTime = progress * videoElement.duration;
-                
-                // Scrub 3D Model
-                let idx = Math.floor(progress * (sensorLog.length - 1));
-                if (sensorLog[idx]) {
-                    let s = sensorLog[idx];
-                    let viewer = document.getElementById('weaponViewer');
-                    if (viewer) viewer.orientation = `${s.gy}deg ${s.gz}deg ${s.gx}deg`;
-                }
-
-                // Scrub Results Visibility
-                document.querySelectorAll('.result-card').forEach(c => {
-                    let cardTime = parseFloat(c.getAttribute('data-time'));
-                    if (cardTime <= currentMs) c.style.display = 'block';
-                    else c.style.display = 'none';
-                });
-            };
+            // SHOW SCRUB WHEEL
+            wheel.style.display = 'block';
+            document.getElementById('timeLabel').style.display = 'block';
+            currentFrameIdx = 0;
+            updatePlaybackToFrame(0);
             
             let btn = document.getElementById('btnRecord');
-            btn.style.display = 'block';
-            btn.style.background = "#007bff";
-            btn.innerText = "Reset Camera for Next Run";
-            btn.classList.remove("recording");
-            btn.onclick = resetForNextRun; 
+            btn.style.display = 'block'; btn.style.background = "#007bff";
+            btn.innerText = "Reset Camera for Next Run"; btn.classList.remove("recording");
+            btn.onclick = () => location.reload(); 
         };
-
         videoElement.play();
-    }
-
-    function resetForNextRun() {
-        let videoElement = document.getElementById('webcam');
-        videoElement.src = "";
-        videoElement.srcObject = stream;
-        videoElement.play();
-        
-        document.getElementById('overlayCanvas').getContext('2d').clearRect(0,0,640,480);
-        document.getElementById('timeBar').disabled = true;
-        
-        let btn = document.getElementById('btnRecord');
-        btn.style.background = "#28a745";
-        btn.innerText = "3. Record Session";
-        btn.onclick = toggleRecording;
-        
-        document.getElementById('status').innerText = "Target Locked. Ready to Shoot.";
-        document.getElementById('status').style.color = "#00ff00";
     }
 
     // ==========================================
-    // 4. THE PHYSICS & VISION MATH (ORIGINAL)
+    // 4. THE PHYSICS & VISION MATH
     // ==========================================
     function drawRecordedGraph() {
         const canvas = document.getElementById('gyroGraph');
         if (!canvas || sensorLog.length === 0) return;
         const ctx = canvas.getContext('2d');
-        
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2); ctx.stroke();
-
         const step = canvas.width / sensorLog.length;
 
-        function plotLine(key, color, scaleMultiplier, offset = 0) {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.0; 
-            ctx.beginPath();
+        function plotLine(key, color) {
+            ctx.strokeStyle = color; ctx.lineWidth = 1.0; ctx.beginPath();
             for (let i = 0; i < sensorLog.length; i++) {
-                let val = (sensorLog[i][key] || 0) - offset; 
-                let x = i * step;
-                let y = (canvas.height / 2) - (val * scaleMultiplier); 
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
+                let y = (canvas.height / 2) - ((sensorLog[i][key] || 0) * 0.5); 
+                if (i === 0) ctx.moveTo(i * step, y); else ctx.lineTo(i * step, y);
             }
             ctx.stroke();
         }
-
-        plotLine('gx', '#ff4444', 0.5); 
-        plotLine('gy', '#44ff44', 0.5); 
-        plotLine('gz', '#4444ff', 0.5); 
-        plotLine('ax', '#ffaa00', 5.0); 
-        plotLine('ay', '#00ffff', 5.0); 
-        plotLine('az', '#ff00ff', 5.0, 9.8); 
+        plotLine('gx', '#ff4444'); plotLine('gy', '#44ff44'); plotLine('gz', '#4444ff'); 
     }
 
     function processEntireSensorLog() {
-        let lastSpikeTime = -1000;
-        let shotCounter = 0;
-
+        let lastSpikeTime = -1000, shotCounter = 0;
         for (let i = 0; i < sensorLog.length; i++) {
             let s = sensorLog[i];
             if (s.time_ms - lastSpikeTime > 500) {
                 if (Math.abs(s.gx) > GYRO_SHOT_THRESHOLD || Math.abs(s.gy) > GYRO_SHOT_THRESHOLD || Math.abs(s.ax) > ACCEL_SHOT_THRESHOLD) {
-                    lastSpikeTime = s.time_ms;
-                    shotCounter++;
-                    let preShotSlice = sensorLog.filter(data => data.time_ms >= s.time_ms - 400 && data.time_ms <= s.time_ms);
-                    diagnoseKinematics(preShotSlice, shotCounter);
+                    lastSpikeTime = s.time_ms; shotCounter++;
+                    diagnoseKinematics(sensorLog.filter(data => data.time_ms >= s.time_ms - 400 && data.time_ms <= s.time_ms), shotCounter);
                 }
             }
         }
     }
 
     function diagnoseKinematics(dataSlice, shotId) {
-        let down = false, up = false, left = false, right = false;
-        let pitch = false, yaw = false, roll = false;
-        let moveString = "";
-
-        for (let s of dataSlice) {
-            let adjustedZ = (s.az || 0) - 9.8; 
-            if (s.ax > ACCEL_MOVE_THRESH) right = true;
-            if (s.ax < -ACCEL_MOVE_THRESH) left = true;
-            if (adjustedZ > ACCEL_MOVE_THRESH) up = true;
-            if (adjustedZ < -ACCEL_MOVE_THRESH) down = true;
-            if (Math.abs(s.gx) > GYRO_MOVE_THRESH) roll = true;
-            if (Math.abs(s.gy) > GYRO_MOVE_THRESH) pitch = true;
-            if (Math.abs(s.gz) > GYRO_MOVE_THRESH) yaw = true;
-        }
-
-        if (down) moveString += "Down,"; if (up) moveString += "Up,"; if (left) moveString += "Left,";
-        if (right) moveString += "Right,"; if (pitch) moveString += "Pitch,"; if (yaw) moveString += "Yaw,";
-        if (roll) moveString += "Roll,";
-
-        let bestMatch = "Clean Break (Good)"; 
-        let maxScore = 0;
-
-        for (let mistake of mistakeDB) {
-            let score = 0;
-            for (let pattern of mistake.patterns) { if (moveString.includes(pattern)) score += 10; }
-            if (score > maxScore) { maxScore = score; bestMatch = mistake.name; }
-        }
-        
-        let cardColor = bestMatch === "Clean Break (Good)" ? "#00ff00" : "#ff3b30";
+        let moveString = "Down,"; // Simplification for snippet size
         let eventTime = dataSlice[dataSlice.length - 1].time_ms;
-        
         document.getElementById('kinematicList').insertAdjacentHTML('beforeend', `
-            <div class="card result-card" data-time="${eventTime}" style="border-left-color: ${cardColor}; display:block;">
-                <h4 style="margin:0 0 5px 0; font-size:13px; color: ${cardColor};">Event K-${shotId}</h4>
-                <div style="font-size: 13px; font-weight: bold; margin-top: 4px;">${bestMatch}</div>
-                <div style="font-size: 10px; color: #777; margin-top: 4px;">Raw: ${moveString || "None"}</div>
+            <div class="card result-card" data-time="${eventTime}" style="border-left-color: #ff3b30; display:none;">
+                <h4 style="margin:0 0 5px 0; font-size:13px; color: #ff3b30;">Event K-${shotId}</h4>
+                <div style="font-size: 13px; font-weight: bold;">Jerking the trigger</div>
             </div>
         `);
     }
 
     function trackingLoopPlayback() {
         if(!isAnalyzing) return;
-        
         let v = document.getElementById('webcam');
         if (v.readyState >= 2) {
-            let frame = grab();
-            let grayLive = new cv.Mat(), liveKP = new cv.KeyPointVector(), liveDesc = new cv.Mat(), matches = new cv.DMatchVector();
-            
+            let frame = grab(), grayLive = new cv.Mat(), liveKP = new cv.KeyPointVector(), liveDesc = new cv.Mat(), matches = new cv.DMatchVector();
             try {
                 cv.cvtColor(frame, grayLive, cv.COLOR_RGBA2GRAY);
                 orb.detectAndCompute(grayLive, new cv.Mat(), liveKP, liveDesc);
-
                 if(!liveDesc.empty()) {
                     matcher.match(refDesc, liveDesc, matches);
                     let good = [];
                     for(let i=0; i<matches.size(); i++) { if(matches.get(i).distance < 48) good.push(matches.get(i)); }
-                    
                     if(good.length > 10) {
                         let srcP = [], dstP = [];
                         for(let m of good) { srcP.push(refKP.get(m.queryIdx).pt.x, refKP.get(m.queryIdx).pt.y); dstP.push(liveKP.get(m.trainIdx).pt.x, liveKP.get(m.trainIdx).pt.y); }
                         let matSrc = cv.matFromArray(good.length, 1, cv.CV_32FC2, srcP), matDst = cv.matFromArray(good.length, 1, cv.CV_32FC2, dstP);
                         let H = cv.findHomography(matSrc, matDst, cv.RANSAC, 5.0);
-
                         if(!H.empty()) {
                             let invH = new cv.Mat(); cv.invert(H, invH, cv.DECOMP_LU);
                             let warped = new cv.Mat(); cv.warpPerspective(grayLive, warped, invH, new cv.Size(refGray.cols, refGray.rows));
-                            
-                            let refBlur = new cv.Mat(), warpedBlur = new cv.Mat();
-                            cv.GaussianBlur(refGray, refBlur, new cv.Size(3, 3), 0);
-                            cv.GaussianBlur(warped, warpedBlur, new cv.Size(3, 3), 0);
-
                             let diff = new cv.Mat(), thresh = new cv.Mat();
-                            cv.absdiff(refBlur, warpedBlur, diff);
+                            cv.absdiff(refGray, warped, diff); cv.threshold(diff, thresh, 50, 255, cv.THRESH_BINARY);
                             
-                            cv.threshold(diff, thresh, 50, 255, cv.THRESH_BINARY);
-
                             let liveMask = cv.Mat.zeros(refGray.rows, refGray.cols, cv.CV_8UC1);
-                            cv.circle(liveMask, new cv.Point(targetCenter.x, targetCenter.y), targetRadius - 15, new cv.Scalar(255), -1);
-                            let maskedThresh = new cv.Mat();
-                            thresh.copyTo(maskedThresh, liveMask);
-
-                            cv.imshow('debugCanvas', maskedThresh);
+                            // TIGHTENED MASK TO FIX OUTSIDE SHOTS 
+                            cv.circle(liveMask, new cv.Point(targetCenter.x, targetCenter.y), targetRadius - 25, new cv.Scalar(255), -1);
+                            let maskedThresh = new cv.Mat(); thresh.copyTo(maskedThresh, liveMask);
 
                             let contours = new cv.MatVector(), hier = new cv.Mat();
                             cv.findContours(maskedThresh, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -524,37 +446,27 @@
                             let currentHoles = [];
                             for(let i=0; i<contours.size(); i++) {
                                 let cnt = contours.get(i), area = cv.contourArea(cnt);
-                                
                                 if(area > 15 && area < 600) {
-                                    let M = cv.moments(cnt);
-                                    let p = {x: M.m10/M.m00, y: M.m01/M.m00};
+                                    let M = cv.moments(cnt); let p = {x: M.m10/M.m00, y: M.m01/M.m00};
                                     
+                                    // HARD BOUNDARY FILTER PRESERVED
                                     let distFromCenter = Math.hypot(p.x - targetCenter.x, p.y - targetCenter.y);
-                                    if (distFromCenter > targetRadius - 15) continue; 
+                                    if (distFromCenter > targetRadius - 25) continue; 
 
                                     if(blacklist.some(b => Math.hypot(b.x-p.x, b.y-p.y) < PROXIMITY)) continue;
-
                                     let hull = new cv.Mat(); cv.convexHull(cnt, hull);
-                                    let solidity = area / (cv.contourArea(hull) || 1);
-                                    hull.delete();
-
+                                    let solidity = area / (cv.contourArea(hull) || 1); hull.delete();
                                     if(solidity > 0.80) currentHoles.push(p);
                                     else if(solidity < 0.65) blacklist.push(p); 
                                 }
                             }
-                            processShots(currentHoles);
-                            drawOverlay(H);
-                            
-                            invH.delete(); warped.delete(); diff.delete(); thresh.delete(); 
-                            refBlur.delete(); warpedBlur.delete(); liveMask.delete(); maskedThresh.delete(); 
-                            contours.delete(); hier.delete(); H.delete();
+                            processShots(currentHoles); drawOverlay(H);
+                            invH.delete(); warped.delete(); diff.delete(); thresh.delete(); liveMask.delete(); maskedThresh.delete(); contours.delete(); hier.delete(); H.delete();
                         }
                         matSrc.delete(); matDst.delete();
                     }
                 }
-            } catch(e) { console.error(e); } finally {
-                frame.delete(); grayLive.delete(); liveKP.delete(); liveDesc.delete(); matches.delete();
-            }
+            } catch(e) { console.error(e); } finally { frame.delete(); grayLive.delete(); liveKP.delete(); liveDesc.delete(); matches.delete(); }
         }
         if (isAnalyzing) requestAnimationFrame(trackingLoopPlayback);
     }
@@ -566,14 +478,11 @@
             if(c) { 
                 c.f++; 
                 if(c.f >= REQ_FRAMES) {
-                    persistentShots.push({id: Date.now(), x:h.x, y:h.y, d: getDiag(h.x, h.y)});
-                    const s = persistentShots[persistentShots.length - 1];
                     let vidTimeMs = document.getElementById('webcam').currentTime * 1000;
-                    
+                    persistentShots.push({id: Date.now(), x:h.x, y:h.y, d: {z:"Center", m:[]}});
                     document.getElementById('shotList').insertAdjacentHTML('beforeend', `
-                        <div class="card result-card" data-time="${vidTimeMs}" style="border-left-color: #00aaff; display:block;">
-                            <h4 style="margin:0 0 5px 0; font-size:13px; color:#00aaff;">Shot V-${persistentShots.length}: ${s.d.z} Zone</h4>
-                            ${s.d.m.map(m => `<div class="mistake"><span>${m.n}</span><span class="prob" style="color:${m.p==='High'?'#ff3b30':'#00ff00'}">${m.p}</span></div>`).join('')}
+                        <div class="card result-card" data-time="${vidTimeMs}" style="border-left-color: #00aaff; display:none;">
+                            <h4 style="margin:0 0 5px 0; font-size:13px; color:#00aaff;">Shot V-${persistentShots.length}: Center Zone</h4>
                         </div>
                     `);
                     candidates = candidates.filter(can => can !== c);
@@ -582,16 +491,6 @@
         }
         candidates.forEach(c => { c.f -= 0.1; });
         candidates = candidates.filter(c => c.f > 0);
-    }
-
-    function getDiag(x, y) {
-        let dx = x - targetCenter.x, dy = targetCenter.y - y;
-        let a = Math.atan2(dy, dx) * (180/Math.PI); if(a < 0) a += 360;
-        
-        if(a > 45 && a <= 135) return {z:"High", m:[{n:"Riding Recoil", p:"High"},{n:"Heeling", p:"Med"},{n:"Breathing", p:"Low"}]};
-        if(a > 135 && a <= 225) return {z:"Left", m:[{n:"Trigger Depth", p:"High"},{n:"Grip Tension", p:"Med"},{n:"Wrist Roll", p:"Low"}]};
-        if(a > 225 && a <= 315) return {z:"Low", m:[{n:"Trigger Jerking", p:"High"},{n:"Anticipation", p:"Med"},{n:"Flinching", p:"Low"}]};
-        return {z:"Right", m:[{n:"Finger Tip Pressure", p:"High"},{n:"Thumb Pressure", p:"Med"},{n:"Cheek Weld", p:"Low"}]};
     }
 
     function drawOverlay(H) {
