@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Target - Final 3D & Wheel Sync</title>
+    <title>Smart Target - Massive Scrub Wheel Sync</title>
     
     <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
@@ -14,18 +14,31 @@
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #0a0a0a; color: white; margin: 0; display: flex; height: 100vh; overflow: hidden; touch-action: none; }
         .main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 10px; overflow-y: auto; }
-        .video-box { position: relative; width: 640px; height: 480px; max-width: 95vw; max-height: 50vh; border: 3px solid #444; border-radius: 12px; overflow: hidden; background: #000; flex-shrink: 0; }
+        .video-box { position: relative; width: 640px; height: 480px; max-width: 95vw; max-height: 40vh; border: 3px solid #444; border-radius: 12px; overflow: hidden; background: #000; flex-shrink: 0; }
         video, canvas.overlay { position: absolute; width: 100%; height: 100%; top: 0; left: 0; object-fit: fill; }
         canvas.overlay { pointer-events: none; z-index: 10; }
         
-        /* Custom Scrub Wheel UI */
-        .wheel-container { width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, #2a2a2a 35%, #1a1a1a 36%, #1a1a1a 95%, #444 96%); position: relative; margin: 15px auto; cursor: grab; border: 2px solid #555; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: none; }
+        /* MASSIVE SCRUB WHEEL UI */
+        .wheel-container { 
+            width: 85vw; max-width: 400px; aspect-ratio: 1 / 1; 
+            border-radius: 50%; 
+            background: radial-gradient(circle, #2a2a2a 39%, #1a1a1a 40%, #1a1a1a 95%, #444 96%); 
+            position: relative; margin: 20px auto; cursor: grab; 
+            border: 3px solid #555; box-shadow: 0 4px 15px rgba(0,0,0,0.6); 
+            display: none; touch-action: none;
+        }
         .wheel-spinner { width: 100%; height: 100%; position: absolute; border-radius: 50%; pointer-events: none; }
-        .wheel-indicator { position: absolute; top: 0; left: 50%; width: 4px; height: 15px; background: #00aaff; transform: translateX(-50%); border-radius: 2px; }
-        .wheel-center { position: absolute; top: 50%; left: 50%; width: 50px; height: 50px; transform: translate(-50%, -50%); border-radius: 50%; background: #333; border: 2px solid #666; pointer-events: none; display: flex; justify-content: center; align-items: center; }
-        .wheel-label-rough { font-size: 9px; font-weight: bold; color: #fff; }
-        .wheel-label-fine { position: absolute; top: 20px; width: 100%; text-align: center; font-size: 9px; font-weight: bold; color: #888; pointer-events: none; }
-        .playback-info { font-family: monospace; font-size: 14px; color: #00aaff; text-align: center; margin-top: 5px; }
+        .wheel-indicator { position: absolute; top: 0; left: 50%; width: 6px; height: 25px; background: #00aaff; transform: translateX(-50%); border-radius: 3px; }
+        .wheel-center { 
+            position: absolute; top: 50%; left: 50%; 
+            width: 40%; height: 40%; 
+            transform: translate(-50%, -50%); 
+            border-radius: 50%; background: #333; border: 2px solid #666; 
+            pointer-events: none; display: flex; justify-content: center; align-items: center; 
+        }
+        .wheel-label-rough { font-size: 14px; font-weight: bold; color: #fff; opacity: 0.5; }
+        .wheel-label-fine { position: absolute; top: 30px; width: 100%; text-align: center; font-size: 12px; font-weight: bold; color: #888; pointer-events: none; }
+        .playback-info { font-family: monospace; font-size: 20px; font-weight: bold; color: #00aaff; text-align: center; margin-top: 10px; }
 
         button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; border-radius: 6px; font-weight: bold; margin: 5px; transition: background 0.3s; }
         button:disabled { background: #444; cursor: not-allowed; }
@@ -41,9 +54,10 @@
         .feed-col { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px;}
         .feed-col h3 { font-size: 11px; color: #aaa; margin: 0 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
         
-        /* Analysis Cards Hidden By Default, Revealed by Wheel */
-        .card { background: #222; border-radius: 8px; padding: 10px; border-left: 4px solid #444; margin-bottom: 10px; animation: fadeIn 0.3s ease; display: none; }
-        .card.visible { display: block; }
+        /* Analysis Cards Hidden By Default, Revealed dynamically via class */
+        .card { background: #222; border-radius: 8px; padding: 10px; border-left: 4px solid #444; margin-bottom: 10px; animation: fadeIn 0.3s ease; }
+        .result-card { display: none; } 
+        .result-card.visible { display: block; }
         .card h4 { margin: 0 0 5px 0; color: #ffcc00; font-size: 13px; text-transform: uppercase; }
         .mistake { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding: 4px 0; font-size: 12px; }
         
@@ -66,7 +80,7 @@
                 <div class="wheel-indicator"></div>
             </div>
             <div class="wheel-center"><span class="wheel-label-rough">ROUGH</span></div>
-            <div class="wheel-label-fine">FINE</div>
+            <div class="wheel-label-fine">FINE SCRUB</div>
         </div>
         <div class="playback-info" id="timeLabel" style="display:none;">0.00s</div>
 
@@ -206,7 +220,7 @@
     }
 
     // ==========================================
-    // SCRUB WHEEL LOGIC (Fine Outside / Rough Inside)
+    // MASSIVE SCRUB WHEEL LOGIC (Fine vs Rough)
     // ==========================================
     const wheel = document.getElementById('scrubWheel');
     const spinner = document.getElementById('wheelSpinner');
@@ -226,7 +240,10 @@
         let dx = e.clientX - (rect.left + rect.width/2);
         let dy = e.clientY - (rect.top + rect.height/2);
         let angle = Math.atan2(dy, dx);
+        
+        // Calculate distance from center to determine Fine vs Rough
         let radius = Math.hypot(dx, dy);
+        let maxRadius = rect.width / 2;
 
         let delta = angle - lastAngle;
         if (delta > Math.PI) delta -= 2 * Math.PI;
@@ -236,10 +253,11 @@
         visualAngle += delta * (180 / Math.PI);
         spinner.style.transform = `rotate(${visualAngle}deg)`;
 
-        // Fine (Outside) vs Rough (Inside) sensitivity
-        let sensitivity = (radius > 40) ? 2 : 25; 
-        currentFrameIdx += delta * sensitivity; 
+        // Rough scrub if inside the center 40%, otherwise Fine scrub
+        let isRough = radius < (maxRadius * 0.40);
+        let sensitivity = isRough ? 25 : 2; 
         
+        currentFrameIdx += delta * sensitivity; 
         if (currentFrameIdx < 0) currentFrameIdx = 0;
         if (currentFrameIdx >= sensorLog.length - 1) currentFrameIdx = sensorLog.length - 1;
 
@@ -260,16 +278,19 @@
         
         // Sync 3D Orientation directly using absolute tilt
         let viewer = document.getElementById('weaponViewer');
-        if (viewer) viewer.orientation = `${s.tp}deg ${s.ty}deg ${s.tr}deg`;
+        if (viewer) {
+            // Apply current frame's recorded rotation to 3D model
+            viewer.orientation = `${s.tp}deg ${s.ty}deg ${s.tr}deg`;
+        }
 
-        // Reveal Analysis Data Cards accurately bound to Timeline
+        // Reveal Analysis Data Cards accurately bound to Timeline (CSS Fix Applied)
         let currentMs = s.time_ms;
         document.querySelectorAll('.result-card').forEach(c => {
             let cardTime = parseFloat(c.getAttribute('data-time'));
             if (cardTime <= currentMs) {
-                c.classList.add('visible'); // Show if time passed
+                c.classList.add('visible'); // Let CSS handle display:block
             } else {
-                c.classList.remove('visible'); // Hide if scrolled backwards
+                c.classList.remove('visible'); // Reverts to display:none
             }
         });
 
@@ -363,7 +384,7 @@
             isAnalyzing = false;
             document.getElementById('status').innerText = "✅ ANALYSIS COMPLETE";
             
-            // SHOW SCRUB WHEEL POST ANALYSIS
+            // SHOW SCRUB WHEEL
             wheel.style.display = 'block';
             document.getElementById('timeLabel').style.display = 'block';
             currentFrameIdx = 0;
@@ -378,7 +399,7 @@
     }
 
     // ==========================================
-    // 4. THE PHYSICS & VISION MATH (FULL RECOVERY)
+    // 4. THE PHYSICS & VISION MATH
     // ==========================================
     function drawRecordedGraph() {
         const canvas = document.getElementById('gyroGraph');
@@ -405,8 +426,7 @@
             if (s.time_ms - lastSpikeTime > 500) {
                 if (Math.abs(s.gx) > GYRO_SHOT_THRESHOLD || Math.abs(s.gy) > GYRO_SHOT_THRESHOLD || Math.abs(s.ax) > ACCEL_SHOT_THRESHOLD) {
                     lastSpikeTime = s.time_ms; shotCounter++;
-                    let preShotSlice = sensorLog.filter(data => data.time_ms >= s.time_ms - 400 && data.time_ms <= s.time_ms);
-                    diagnoseKinematics(preShotSlice, shotCounter);
+                    diagnoseKinematics(sensorLog.filter(data => data.time_ms >= s.time_ms - 400 && data.time_ms <= s.time_ms), shotCounter);
                 }
             }
         }
@@ -444,6 +464,7 @@
         let cardColor = bestMatch === "Clean Break (Good)" ? "#00ff00" : "#ff3b30";
         let eventTime = dataSlice[dataSlice.length - 1].time_ms;
         
+        // NO INLINE STYLES FOR DISPLAY, RELIES ON CSS .visible
         document.getElementById('kinematicList').insertAdjacentHTML('beforeend', `
             <div class="card result-card" data-time="${eventTime}" style="border-left-color: ${cardColor};">
                 <h4 style="margin:0 0 5px 0; font-size:13px; color: ${cardColor};">Event K-${shotId}</h4>
@@ -477,7 +498,6 @@
                             cv.absdiff(refGray, warped, diff); cv.threshold(diff, thresh, 50, 255, cv.THRESH_BINARY);
                             
                             let liveMask = cv.Mat.zeros(refGray.rows, refGray.cols, cv.CV_8UC1);
-                            // TIGHTENED MASK TO FIX OUTSIDE SHOTS (from 15 to 25)
                             cv.circle(liveMask, new cv.Point(targetCenter.x, targetCenter.y), targetRadius - 25, new cv.Scalar(255), -1);
                             let maskedThresh = new cv.Mat(); thresh.copyTo(maskedThresh, liveMask);
 
@@ -489,11 +509,8 @@
                                 let cnt = contours.get(i), area = cv.contourArea(cnt);
                                 if(area > 15 && area < 600) {
                                     let M = cv.moments(cnt); let p = {x: M.m10/M.m00, y: M.m01/M.m00};
-                                    
-                                    // HARD BOUNDARY FILTER PRESERVED
                                     let distFromCenter = Math.hypot(p.x - targetCenter.x, p.y - targetCenter.y);
                                     if (distFromCenter > targetRadius - 25) continue; 
-
                                     if(blacklist.some(b => Math.hypot(b.x-p.x, b.y-p.y) < PROXIMITY)) continue;
                                     let hull = new cv.Mat(); cv.convexHull(cnt, hull);
                                     let solidity = area / (cv.contourArea(hull) || 1); hull.delete();
@@ -523,6 +540,7 @@
                     const s = persistentShots[persistentShots.length - 1];
                     let vidTimeMs = document.getElementById('webcam').currentTime * 1000;
                     
+                    // NO INLINE STYLES FOR DISPLAY, RELIES ON CSS .visible
                     document.getElementById('shotList').insertAdjacentHTML('beforeend', `
                         <div class="card result-card" data-time="${vidTimeMs}" style="border-left-color: #00aaff;">
                             <h4 style="margin:0 0 5px 0; font-size:13px; color:#00aaff;">Shot V-${persistentShots.length}: ${s.d.z} Zone</h4>
