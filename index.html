@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Target - Vision + 3D Gyro</title>
+    <title>Smart Target - Integrated Vision & 3D</title>
     
     <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
     <script>var Module = { onRuntimeInitialized: function() { onOpenCvReady(); } };</script>
@@ -25,7 +25,10 @@
         #status { font-weight: bold; color: #00ff00; margin-bottom: 10px; text-transform: uppercase; font-size: 12px; text-align: center; }
         
         .split-view { display: flex; gap: 10px; flex: 1; }
-        .col { flex: 1; overflow-y: auto; font-size: 12px; }
+        .col { flex: 1; overflow-y: auto; }
+        .card { background: #222; padding: 10px; border-radius: 5px; margin-bottom: 8px; font-size: 13px; border-left: 4px solid #007bff; border-bottom: 1px solid #333; }
+        .card h4 { margin: 0 0 5px 0; color: #aaa; font-size: 11px; }
+        .severity-High { color: #ff4444; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -55,15 +58,13 @@
             </model-viewer>
         </div>
 
-        <div id="telemetryStatus" style="font-size: 10px; color: #888; margin-bottom: 10px;">Telemetry: Waiting...</div>
-
         <div class="split-view">
             <div class="col">
-                <h4 style="margin:5px 0">SHOT TRACKING</h4>
+                <h4 style="margin:5px 0; color:#888;">SHOT LOG</h4>
                 <div id="shotList"></div>
             </div>
             <div class="col">
-                <h4 style="margin:5px 0">KINEMATICS</h4>
+                <h4 style="margin:5px 0; color:#888;">KINEMATICS</h4>
                 <div id="kinematicList"></div>
             </div>
         </div>
@@ -71,91 +72,111 @@
 
 <script>
     let stream, isRecording = false, recordingStartTime = 0;
-    let sensorLog = [], persistentShots = [];
+    let sensorLog = [], persistentShots = [], targetCenter = {x: 320, y: 240};
     const GYRO_SPIKE = 80;
     const model = document.querySelector('#weaponViewer');
 
-    // --- FIX: Robust Camera Init ---
-    async function startCamera() {
-        const video = document.getElementById('webcam');
-        const status = document.getElementById('status');
+    // --- 1. Vision Engine (From File 131) ---
+    function getDiag(x, y) {
+        let dx = x - targetCenter.x, dy = targetCenter.y - y;
+        let a = Math.atan2(dy, dx) * (180/Math.PI); if(a < 0) a += 360;
         
+        if(a > 45 && a <= 135) return {z:"High", m:[{n:"Riding Recoil", p:"High"},{n:"Heeling", p:"Med"}]};
+        if(a > 135 && a <= 225) return {z:"Left", m:[{n:"Trigger Depth", p:"High"},{n:"Grip Tension", p:"Med"}]};
+        if(a > 225 && a <= 315) return {z:"Low", m:[{n:"Trigger Jerking", p:"High"},{n:"Anticipation", p:"Med"}]};
+        return {z:"Right", m:[{n:"Tip Pressure", p:"High"},{n:"Thumb Pressure", p:"Med"}]};
+    }
+
+    function drawOverlay() {
+        let ctx = document.getElementById('overlayCanvas').getContext('2d');
+        ctx.clearRect(0,0,640,480);
+        persistentShots.forEach((s, idx) => {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, 10, 0, Math.PI*2);
+            ctx.fillStyle = "rgba(255, 255, 0, 0.6)";
+            ctx.fill();
+            ctx.strokeStyle = "white";
+            ctx.stroke();
+            ctx.fillStyle = "black";
+            ctx.fillText(idx+1, s.x-3, s.y+3);
+        });
+    }
+
+    // --- 2. Hardware & Control ---
+    async function startCamera() {
         try {
-            status.innerText = "Requesting Hardware...";
-            stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: { ideal: "environment" }, width: 640, height: 480 }, 
-                audio: false 
-            });
-            
-            video.srcObject = stream;
-            
-            // Critical for mobile: force play and handle potential promise rejection
-            await video.play();
-            
-            status.innerText = "Camera Active. Point at Target.";
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: 640, height: 480 } });
+            document.getElementById('webcam').srcObject = stream;
+            document.getElementById('status').innerText = "Camera Active";
             document.getElementById('btnBase').disabled = false;
-        } catch (err) {
-            status.innerText = "Error: " + err.name;
-            console.error("Camera Fail:", err);
-        }
+        } catch (e) { document.getElementById('status').innerText = "Camera Error"; }
     }
 
-    // --- FIX: Integration Logic ---
     function setBaseline() {
-        // This triggers the vision logic from your original code
-        document.getElementById('status').innerText = "Baseline Locked. Ready to Record.";
+        // Simulates target lock
+        document.getElementById('status').innerText = "Baseline Locked";
         document.getElementById('btnRecord').disabled = false;
-        // logic for target detection would be called here
-    }
-
-    function triggerAnimation() {
-        if (!model) return;
-        model.currentTime = 0; // Starts from 0 (10% lead-in before spike)
-        model.play();
-    }
-
-    function update3D(gyro) {
-        if (!model) return;
-        // Map beta/gamma/alpha to 3D orientation
-        model.orientation = `${gyro.x}deg ${gyro.y}deg ${gyro.z}deg`;
+        drawOverlay();
     }
 
     window.addEventListener('deviceorientation', (e) => {
         if (!isRecording) return;
-        let data = {
-            t: performance.now() - recordingStartTime,
-            gyro: { x: e.beta, y: e.gamma, z: e.alpha }
-        };
-        sensorLog.push(data);
+        let gyro = { x: e.beta || 0, y: e.gamma || 0, z: e.alpha || 0 };
+        sensorLog.push({ t: performance.now() - recordingStartTime, gyro: gyro });
         
-        update3D(data.gyro);
-        if (Math.abs(e.gamma) > GYRO_SPIKE) triggerAnimation();
+        model.orientation = `${gyro.x}deg ${gyro.y}deg ${gyro.z}deg`;
+        
+        if (Math.abs(gyro.y) > GYRO_SPIKE) {
+            model.currentTime = 0;
+            model.play();
+            // Record a shot at current orientation
+            processShot(gyro);
+        }
     });
 
+    function processShot(gyro) {
+        // Offset shot from center based on tilt
+        let shotX = targetCenter.x + (gyro.z * 0.5); 
+        let shotY = targetCenter.y + (gyro.x * 0.5);
+        let diag = getDiag(shotX, shotY);
+        
+        persistentShots.push({x: shotX, y: shotY, diag: diag});
+    }
+
     function toggleRecording() {
-        const btn = document.getElementById('btnRecord');
         if (!isRecording) {
-            sensorLog = [];
+            sensorLog = []; persistentShots = [];
             recordingStartTime = performance.now();
             isRecording = true;
-            btn.innerText = "Stop & Analyze";
-            btn.classList.add('recording');
+            document.getElementById('btnRecord').classList.add('recording');
         } else {
             isRecording = false;
-            btn.innerText = "Record Session";
-            btn.classList.remove('recording');
-            analyzeSession();
+            document.getElementById('btnRecord').classList.remove('recording');
+            showResults();
         }
     }
 
-    function analyzeSession() {
-        document.getElementById('status').innerText = "Analyzing Data...";
-        // Call your original "getDiag" and "drawOverlay" logic here
+    // --- 3. The Missing Results Display ---
+    function showResults() {
+        document.getElementById('status').innerText = "Analysis Complete";
+        drawOverlay();
+        
+        const shotList = document.getElementById('shotList');
+        const kinList = document.getElementById('kinematicList');
+        shotList.innerHTML = ""; kinList.innerHTML = "";
+
+        persistentShots.forEach((s, i) => {
+            // Add to Shot List
+            shotList.innerHTML += `<div class="card"><h4>Shot ${i+1}</h4>Zone: ${s.diag.z}</div>`;
+            
+            // Add to Kinematic List
+            s.diag.m.forEach(m => {
+                kinList.innerHTML += `<div class="card"><h4>Error Detected</h4>${m.n}<br><span class="severity-${m.p}">Severity: ${m.p}</span></div>`;
+            });
+        });
     }
 
-    function onOpenCvReady() {
-        document.getElementById('status').innerText = "Vision Engine Online";
-    }
+    function onOpenCvReady() { document.getElementById('status').innerText = "Vision Engine Online"; }
 </script>
 </body>
 </html>
